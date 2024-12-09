@@ -1,1 +1,1 @@
-Protoschema is hybrid between gRPC and JSON Schema. Running index.js will compile protoschema file into a JSON schema, protobuf file, client code template, and server code template. The templates include validation from schema.
+Protoschema is hybrid between gRPC and JSON Schema. Running index.js will compile protoschema file into a JSON schema, protobuf file, and example client and server code. The code examples include validation from JSON the schema.
