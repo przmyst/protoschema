@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "#User",
+  "$ref": "#/definitions/User",
+  "definitions": {
+    "User": {
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 30,
+          "pattern": "^[a-zA-Z0-9_]+$",
+          "example": "JohnDoe"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "example": "joe.doe@example.com"
+        },
+        "age": {
+          "type": "integer",
+          "minimum": 1,
+          "example": 2
+        },
+        "address": {
+          "$ref": "#/definitions/Address"
+        }
+      },
+      "required": [
+        "username",
+        "email",
+        "age",
+        "address"
+      ]
+    },
+    "Address": {
+      "type": "object",
+      "properties": {
+        "street": {
+          "type": "string",
+          "minLength": 5,
+          "example": "123 Main St"
+        },
+        "city": {
+          "type": "string",
+          "minLength": 2,
+          "example": "Reno"
+        },
+        "country": {
+          "type": "string",
+          "enum": [
+            "US",
+            "CA",
+            "UK"
+          ],
+          "example": "US"
+        }
+      },
+      "required": [
+        "street",
+        "city",
+        "country"
+      ]
+    },
+    "GetUserRequest": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "user_id"
+      ]
+    },
+    "GetUserResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/User"
+        }
+      },
+      "required": [
+        "user"
+      ]
+    },
+    "CreateUserRequest": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/User"
+        }
+      },
+      "required": [
+        "user"
+      ]
+    },
+    "CreateUserResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/User"
+        }
+      },
+      "required": [
+        "user"
+      ]
+    }
+  }
+}

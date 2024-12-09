@@ -1,0 +1,69 @@
+const grpc = require('@grpc/grpc-js');
+const protoLoader = require('@grpc/proto-loader');
+const Ajv = require('ajv');
+const addFormats = require('ajv-formats');
+
+const packageDefinition = protoLoader.loadSync('{{protoFileName}}', {
+keepCase: true,
+longs: String,
+enums: String,
+defaults: true,
+oneofs: true
+});
+
+const serviceDefinition = grpc.loadPackageDefinition(packageDefinition).{{serviceName}};
+
+const schema = require(`./{{schemaBaseName}}.schema.json`);
+
+const ajv = new Ajv({ allErrors: true, strict: false });
+addFormats(ajv);
+ajv.addSchema(schema, 'rootSchema');
+
+function getValidator(msgName) {
+const validate = ajv.getSchema(`rootSchema#/definitions/${msgName}`);
+return validate || null;
+}
+
+function main() {
+const server = new grpc.Server();
+
+server.addService(serviceDefinition.service, {
+{{#each rpcMethods}}
+    {{name}}: (call, callback) => {
+    const validateRequest = getValidator('{{requestType}}');
+    const validateResponse = getValidator('{{responseType}}');
+
+    if (validateRequest && !validateRequest(call.request)) {
+    const errors = validateRequest.errors.map(e => e.message).join(', ');
+    return callback({
+    code: grpc.status.INVALID_ARGUMENT,
+    message: `Invalid request: ${errors}`
+    });
+    }
+
+    const response = {{{ responseExample }}}
+
+    if (validateResponse && !validateResponse(response)) {
+    const errors = validateResponse.errors.map(e => e.message).join(', ');
+    return callback({
+    code: grpc.status.INTERNAL,
+    message: `Invalid response: ${errors}`
+    });
+    }
+
+    callback(null, response);
+    },
+{{/each}}
+});
+
+server.bindAsync('{{host}}:{{port}}', grpc.ServerCredentials.createInsecure(), (err, port) => {
+if (err) {
+console.error('Server binding error:', err);
+return;
+}
+console.log(`Server running at {{host}}:{{port}}`);
+server.start();
+});
+}
+
+main();

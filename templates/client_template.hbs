@@ -1,0 +1,59 @@
+const grpc = require('@grpc/grpc-js');
+const protoLoader = require('@grpc/proto-loader');
+const Ajv = require('ajv');
+const addFormats = require('ajv-formats');
+const fs = require('fs');
+const path = require('path');
+
+const PROTO_PATH = path.join(__dirname, '{{protoFileName}}');
+const SCHEMA_PATH = path.join(__dirname, '{{schemaBaseName}}.schema.json');
+
+const schema = JSON.parse(fs.readFileSync(SCHEMA_PATH, 'utf8'));
+
+const ajv = new Ajv({ allErrors: true, strict: false });
+addFormats(ajv);
+ajv.addSchema(schema, 'rootSchema');
+
+function getValidator(msgName) {
+const validate = ajv.getSchema(`rootSchema#/definitions/${msgName}`);
+return validate || null;
+}
+
+const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+keepCase: true,
+longs: String,
+enums: String,
+defaults: true,
+oneofs: true
+});
+
+const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
+const Service = protoDescriptor.{{serviceName}};
+
+const client = new Service('{{host}}:{{port}}', grpc.credentials.createInsecure());
+
+{{#each rpcMethods}}
+    {
+    const requestData = {{{this.requestExample}}};
+
+    const validateRequest = getValidator('{{this.requestType}}');
+
+    if (validateRequest && !validateRequest(requestData)) {
+    console.error('Validation errors for {{this.name}} request:', validateRequest.errors);
+    } else {
+    client.{{this.name}}(requestData, (err, response) => {
+    if (err) {
+    console.error('Error calling {{this.name}}:', err);
+    return;
+    }
+
+    const validateResponse = getValidator('{{this.responseType}}');
+    if (validateResponse && !validateResponse(response)) {
+    console.error('Validation errors for {{this.name}} response:', validateResponse.errors);
+    } else {
+    console.log('{{this.name}} Response:', response);
+    }
+    });
+    }
+    }
+{{/each}}

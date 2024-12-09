@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+message User {
+  // Constraints:
+  //   minLength: 3
+  //   maxLength: 30
+  //   pattern: "^[a-zA-Z0-9_]+$"
+  //   example: "JohnDoe"
+  string username = 1;
+
+  // Constraints:
+  //   format: "email"
+  //   example: "joe.doe@example.com"
+  string email = 2;
+
+  // Constraints:
+  //   minimum: 1
+  //   example: 2
+  int32 age = 3;
+
+  Address address = 4;
+}
+
+message Address {
+  // Constraints:
+  //   minLength: 5
+  //   example: "123 Main St"
+  string street = 1;
+
+  // Constraints:
+  //   minLength: 2
+  //   example: "Reno"
+  string city = 2;
+
+  // Constraints:
+  //   enum: ["US", "CA", "UK"]
+  //   example: "US"
+  string country = 3;
+}
+
+message GetUserRequest {
+  // Constraints:
+  //   minimum: 1
+  int32 user_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message CreateUserRequest {
+  User user = 1;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+service UserService {
+  rpc GetUser (GetUserRequest) returns (GetUserResponse);
+  rpc CreateUser (CreateUserRequest) returns (CreateUserResponse);
+}
