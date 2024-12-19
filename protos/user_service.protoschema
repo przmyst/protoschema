@@ -21,7 +21,12 @@ message User {
     example: 2
   };
 
-  Address address = 4;
+  repeated Address addresses = 4;
+
+  repeated string tags = 5 {
+    minLength: 2,
+    example: "tag1"
+  };
 }
 
 message Address {
@@ -29,10 +34,12 @@ message Address {
     minLength: 5,
     example: "123 Main St"
   };
+
   string city = 2 {
     minLength: 2,
     example: "Reno"
   };
+
   string country = 3 {
     enum: ["US", "CA", "UK"],
     example: "US"

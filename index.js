@@ -1,13 +1,38 @@
 #!/usr/bin/env node
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
-import { select } from '@inquirer/prompts'
-import { createToken, Lexer, CstParser } from 'chevrotain'
+import {
+	fileURLToPath
+} from 'url'
+import {
+	select
+} from '@inquirer/prompts'
+import {
+	createToken, Lexer, CstParser
+} from 'chevrotain'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import Handlebars from 'handlebars'
-import { exec } from 'child_process';
+import {
+	exec
+} from 'child_process'
+
+import {
+	MongoClient
+} from 'mongodb'
+
+const uri = 'mongodb://localhost:27017'
+const client = new MongoClient(uri)
+await client.connect()
+const db = client.db('protoschemaDB')
+
+const servicesCollection = db.collection('services')
+const messagesCollection = db.collection('messages')
+
+await servicesCollection.deleteMany({
+})
+await messagesCollection.deleteMany({
+})
 
 Handlebars.registerHelper('json', function(context) {
 	return JSON.stringify(context, null, 2)
@@ -27,13 +52,13 @@ const Comment = createToken({
 	pattern: /\/\/[^\n]*/,
 	group: Lexer.SKIPPED
 })
-const Message = createToken({
-	name: 'Message',
-	pattern: /message/
-})
 const Service = createToken({
 	name: 'Service',
 	pattern: /service/
+})
+const Message = createToken({
+	name: 'Message',
+	pattern: /message/
 })
 const Rpc = createToken({
 	name: 'Rpc',
@@ -42,6 +67,10 @@ const Rpc = createToken({
 const Returns = createToken({
 	name: 'Returns',
 	pattern: /returns/
+})
+const Repeated = createToken({
+	name: 'Repeated',
+	pattern: /repeated/
 })
 const LCurly = createToken({
 	name: 'LCurly',
@@ -141,6 +170,7 @@ const allTokens = [
 	Service,
 	Rpc,
 	Returns,
+	Repeated,
 	LCurly,
 	RCurly,
 	LParen,
@@ -174,8 +204,12 @@ class MySchemaParser extends CstParser {
 		$.RULE('schemaFile', () => {
 			$.MANY(() => {
 				$.OR([
-					{ ALT: () => $.SUBRULE($.messageDecl) },
-					{ ALT: () => $.SUBRULE($.serviceDecl) }
+					{
+						ALT: () => $.SUBRULE($.messageDecl)
+					},
+					{
+						ALT: () => $.SUBRULE($.serviceDecl)
+					}
 				])
 			})
 		})
@@ -191,16 +225,24 @@ class MySchemaParser extends CstParser {
 		})
 
 		$.RULE('fieldDecl', () => {
+			const repeated = $.OPTION1(() => {
+				return $.CONSUME(Repeated)
+			})
+
 			$.OR([
-				{ ALT: () => $.CONSUME(TypeKeyword) },
-				{ ALT: () => $.CONSUME1(Identifier) }
+				{
+					ALT: () => $.CONSUME(TypeKeyword)
+				},
+				{
+					ALT: () => $.CONSUME1(Identifier)
+				}
 			])
 
 			$.CONSUME2(Identifier)
 			$.CONSUME(Equals)
 			$.CONSUME(IntLit)
 
-			$.OPTION(() => {
+			$.OPTION2(() => {
 				$.CONSUME(LCurly)
 				$.AT_LEAST_ONE_SEP({
 					SEP: Comma,
@@ -210,28 +252,52 @@ class MySchemaParser extends CstParser {
 			})
 
 			$.CONSUME(Semicolon)
+
+			return {
+				repeated: !!repeated
+			}
 		})
 
 		$.RULE('constraint', () => {
 			$.OR([
-				{ ALT: () => $.SUBRULE($.kvConstraint) },
-				{ ALT: () => $.SUBRULE($.enumConstraint) }
+				{
+					ALT: () => $.SUBRULE($.kvConstraint)
+				},
+				{
+					ALT: () => $.SUBRULE($.enumConstraint)
+				}
 			])
 		})
 
 		$.RULE('kvConstraint', () => {
 			$.OR([
-				{ ALT: () => $.CONSUME(MinLength) },
-				{ ALT: () => $.CONSUME(MaxLength) },
-				{ ALT: () => $.CONSUME(PatternToken) },
-				{ ALT: () => $.CONSUME(Format) },
-				{ ALT: () => $.CONSUME(Minimum) },
-				{ ALT: () => $.CONSUME(Example) }
+				{
+					ALT: () => $.CONSUME(MinLength)
+				},
+				{
+					ALT: () => $.CONSUME(MaxLength)
+				},
+				{
+					ALT: () => $.CONSUME(PatternToken)
+				},
+				{
+					ALT: () => $.CONSUME(Format)
+				},
+				{
+					ALT: () => $.CONSUME(Minimum)
+				},
+				{
+					ALT: () => $.CONSUME(Example)
+				}
 			])
 			$.CONSUME(Colon)
 			$.OR2([
-				{ ALT: () => $.CONSUME(IntLit) },
-				{ ALT: () => $.CONSUME(StringValue) }
+				{
+					ALT: () => $.CONSUME(IntLit)
+				},
+				{
+					ALT: () => $.CONSUME(StringValue)
+				}
 			])
 		})
 
@@ -299,6 +365,8 @@ function cstToAst(cst) {
 		const fields = []
 		const fieldDecls = m.children.fieldDecl || []
 		for (const f of fieldDecls) {
+			const repeated = f.children.Repeated ? true : false
+
 			let typeToken
 			if (f.children.TypeKeyword) {
 				typeToken = f.children.TypeKeyword[0].image
@@ -309,7 +377,8 @@ function cstToAst(cst) {
 			const fieldName = f.children.Identifier[f.children.Identifier.length - 1].image
 			const fieldNumber = parseInt(f.children.IntLit[0].image, 10)
 
-			const constraints = {}
+			const constraints = {
+			}
 			if (f.children.LCurly) {
 				const constraintNodes = f.children.constraint || []
 				for (const cNode of constraintNodes) {
@@ -328,7 +397,7 @@ function cstToAst(cst) {
 						}
 						constraints[key] = val
 					} else if (cNode.children.enumConstraint) {
-						const enumItems = cNode.children.enumConstraint[0].children.StringValue.map(sv => sv.image.slice(1,-1))
+						const enumItems = cNode.children.enumConstraint[0].children.StringValue.map(sv => sv.image.slice(1, -1))
 						constraints.enum = enumItems
 					}
 				}
@@ -338,7 +407,8 @@ function cstToAst(cst) {
 				name: fieldName,
 				type: typeToken,
 				number: fieldNumber,
-				constraints
+				constraints,
+				repeated
 			})
 		}
 
@@ -373,23 +443,50 @@ function cstToAst(cst) {
 }
 
 function astToJsonSchema(ast) {
-	const definitions = {}
+	const definitions = {
+	}
 
 	function convertMessageToSchema(msg) {
-		const properties = {}
+		const properties = {
+		}
 		const requiredFields = []
+
 		for (const field of msg.fields) {
-			const jsonField = {}
-			if (field.type === 'string') {
-				jsonField.type = 'string'
-			} else if (field.type === 'int32' || field.type === 'integer') {
-				jsonField.type = 'integer'
-			} else {
-				jsonField.$ref = `#/definitions/${field.type}`
+			let jsonField = {
 			}
 
-			for (const [k,v] of Object.entries(field.constraints)) {
-				jsonField[k] = v
+			if (field.repeated) {
+				jsonField.type = 'array'
+				jsonField.items = {
+				}
+
+				if (field.type === 'string') {
+					jsonField.items.type = 'string'
+				} else if (field.type === 'int32' || field.type === 'integer') {
+					jsonField.items.type = 'integer'
+				} else {
+					jsonField.items.$ref = `#/definitions/${field.type}`
+				}
+
+				for (const [k, v] of Object.entries(field.constraints)) {
+					if (k === 'enum') {
+						jsonField.items.enum = v
+					} else {
+						jsonField.items[k] = v
+					}
+				}
+			} else {
+				if (field.type === 'string') {
+					jsonField.type = 'string'
+				} else if (field.type === 'int32' || field.type === 'integer') {
+					jsonField.type = 'integer'
+				} else {
+					jsonField.$ref = `#/definitions/${field.type}`
+				}
+
+				for (const [k, v] of Object.entries(field.constraints)) {
+					jsonField[k] = v
+				}
 			}
 
 			properties[field.name] = jsonField
@@ -409,7 +506,7 @@ function astToJsonSchema(ast) {
 
 	const rootMsg = ast.messages.length > 0 ? ast.messages[0].name : 'Root'
 
-	const schema = {
+	return {
 		$schema: 'http://json-schema.org/draft-07/schema#',
 		$id: `#${rootMsg}`,
 		$ref: `#/definitions/${rootMsg}`,
@@ -417,8 +514,6 @@ function astToJsonSchema(ast) {
 			...definitions
 		}
 	}
-
-	return schema
 }
 
 function astToProto(ast) {
@@ -442,7 +537,8 @@ function astToProto(ast) {
 					lines.push(`  //   ${key}: ${val}`)
 				}
 			}
-			lines.push(`  ${field.type} ${field.name} = ${field.number};`)
+			const repeatedStr = field.repeated ? 'repeated ' : ''
+			lines.push(`  ${repeatedStr}${field.type} ${field.name} = ${field.number};`)
 			lines.push('')
 		}
 		if (lines[lines.length - 1] === '') {
@@ -474,23 +570,39 @@ function getMessageFields(ast, messageName) {
 	return msg.fields.map(f => ({
 		name: f.name,
 		type: f.type,
-		example: f.constraints.example
+		example: f.constraints.example,
+		repeated: f.repeated
 	}))
 }
 
 function buildExampleForMessage(ast, messageName) {
 	const fields = getMessageFields(ast, messageName)
-	const exampleObj = {}
+	const exampleObj = {
+	}
 	for (const f of fields) {
-		if (f.example !== undefined) {
-			exampleObj[f.name] = f.example
-		} else {
-			if (f.type === 'string') {
-				exampleObj[f.name] = 'example_string'
-			} else if (f.type === 'int32' || f.type === 'integer') {
-				exampleObj[f.name] = 1
+		if (f.repeated) {
+			if (f.example !== undefined) {
+				exampleObj[f.name] = [f.example]
 			} else {
-				exampleObj[f.name] = buildExampleForMessage(ast, f.type)
+				if (f.type === 'string') {
+					exampleObj[f.name] = ['example_string']
+				} else if (f.type === 'int32' || f.type === 'integer') {
+					exampleObj[f.name] = [1]
+				} else {
+					exampleObj[f.name] = [buildExampleForMessage(ast, f.type)]
+				}
+			}
+		} else {
+			if (f.example !== undefined) {
+				exampleObj[f.name] = f.example
+			} else {
+				if (f.type === 'string') {
+					exampleObj[f.name] = 'example_string'
+				} else if (f.type === 'int32' || f.type === 'integer') {
+					exampleObj[f.name] = 1
+				} else {
+					exampleObj[f.name] = buildExampleForMessage(ast, f.type)
+				}
 			}
 		}
 	}
@@ -520,8 +632,8 @@ function getRpcMethods(ast, serviceName) {
 }
 
 function generateClientFile({
-								protoFileName, serviceName, host, port, rpcMethods, schemaBaseName
-							}) {
+	protoFileName, serviceName, host, port, rpcMethods, schemaBaseName
+}) {
 	const templatePath = path.join(__dirname, 'templates/client_template.hbs')
 	const templateSource = fs.readFileSync(templatePath, 'utf8')
 	const template = Handlebars.compile(templateSource)
@@ -538,10 +650,9 @@ function generateClientFile({
 	console.log(`Exported client file to ${clientFilePath}`)
 }
 
-
 function generateServerFile({
-								protoFileName, serviceName, host, port, rpcMethods, schemaBaseName
-							}) {
+	protoFileName, serviceName, host, port, rpcMethods, schemaBaseName
+}) {
 	const templatePath = path.join(__dirname, 'templates/server_template.hbs')
 	const templateSource = fs.readFileSync(templatePath, 'utf8')
 	const template = Handlebars.compile(templateSource)
@@ -561,11 +672,12 @@ function generateServerFile({
 	console.log(`Exported server file to ${serverFilePath}`)
 }
 
-
 async function main() {
 	const distPath = path.join(__dirname, 'dist')
 	if (!fs.existsSync(distPath)) {
-		fs.mkdirSync(distPath, { recursive: true })
+		fs.mkdirSync(distPath, {
+			recursive: true
+		})
 		console.log(`Created "dist" directory at ${distPath}`)
 	}
 
@@ -583,7 +695,10 @@ async function main() {
 
 	const selectedFile = await select({
 		message: 'Select a .protoschema file to process:',
-		choices: files.map(file => ({ name: file, value: file }))
+		choices: files.map(file => ({
+			name: file,
+			value: file
+		}))
 	})
 
 	const schemaFilePath = path.join(protosDir, selectedFile)
@@ -598,9 +713,28 @@ async function main() {
 			process.exit(1)
 		}
 
+		for (const service of ast.services) {
+			await servicesCollection.insertOne({
+				name: service.name,
+				rpcs: service.rpcs,
+				sourceFile: selectedFile
+			})
+		}
+
+		for (const message of ast.messages) {
+			await messagesCollection.insertOne({
+				name: message.name,
+				fields: message.fields,
+				sourceFile: selectedFile
+			})
+		}
+
 		const selectedService = await select({
 			message: 'Select a service to process:',
-			choices: ast.services.map(s => ({ name: s.name, value: s.name }))
+			choices: ast.services.map(s => ({
+				name: s.name,
+				value: s.name
+			}))
 		})
 
 		const schema = astToJsonSchema(ast)

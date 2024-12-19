@@ -33,8 +33,17 @@ const Service = protoDescriptor.{{serviceName}};
 const client = new Service('{{host}}:{{port}}', grpc.credentials.createInsecure());
 
 {{#each rpcMethods}}
-    {
-    const requestData = {{{this.requestExample}}};
+    (function() {
+    let requestData = {{{this.requestExample}}};
+
+    // Ensure repeated fields in the request are arrays
+    {{#each this.requestFields}}
+        {{#if repeated}}
+            if (requestData.{{name}} && !Array.isArray(requestData.{{name}})) {
+            requestData.{{name}} = [requestData.{{name}}];
+            }
+        {{/if}}
+    {{/each}}
 
     const validateRequest = getValidator('{{this.requestType}}');
 
@@ -51,9 +60,18 @@ const client = new Service('{{host}}:{{port}}', grpc.credentials.createInsecure(
     if (validateResponse && !validateResponse(response)) {
     console.error('Validation errors for {{this.name}} response:', validateResponse.errors);
     } else {
+
+    {{#each this.responseFields}}
+        {{#if repeated}}
+            if (response.{{name}} && !Array.isArray(response.{{name}})) {
+            response.{{name}} = [response.{{name}}];
+            }
+        {{/if}}
+    {{/each}}
+
     console.log('{{this.name}} Response:', response);
     }
     });
     }
-    }
+    })();
 {{/each}}

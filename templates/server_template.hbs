@@ -2,6 +2,8 @@ const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 const Ajv = require('ajv');
 const addFormats = require('ajv-formats');
+const fs = require('fs');
+const path = require('path');
 
 const packageDefinition = protoLoader.loadSync('{{protoFileName}}', {
 keepCase: true,
@@ -33,6 +35,14 @@ server.addService(serviceDefinition.service, {
     const validateRequest = getValidator('{{requestType}}');
     const validateResponse = getValidator('{{responseType}}');
 
+    {{#each requestFields}}
+        {{#if repeated}}
+            if (!Array.isArray(call.request.{{name}})) {
+            call.request.{{name}} = [call.request.{{name}}];
+            }
+        {{/if}}
+    {{/each}}
+
     if (validateRequest && !validateRequest(call.request)) {
     const errors = validateRequest.errors.map(e => e.message).join(', ');
     return callback({
@@ -41,7 +51,15 @@ server.addService(serviceDefinition.service, {
     });
     }
 
-    const response = {{{ responseExample }}}
+    const response = {{{ responseExample }}};
+
+    {{#each responseFields}}
+        {{#if repeated}}
+            if (!Array.isArray(response.{{name}})) {
+            response.{{name}} = [response.{{name}}];
+            }
+        {{/if}}
+    {{/each}}
 
     if (validateResponse && !validateResponse(response)) {
     const errors = validateResponse.errors.map(e => e.message).join(', ');
@@ -67,3 +85,4 @@ server.start();
 }
 
 main();
+
